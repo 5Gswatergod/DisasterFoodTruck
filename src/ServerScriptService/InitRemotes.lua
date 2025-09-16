@@ -26,6 +26,7 @@ function InitRemotes.Setup()
     ensure(remotesFolder, "RemoteEvent", "ShakeCam")
     ensure(remotesFolder, "RemoteEvent", "MatchState")
     ensure(remotesFolder, "RemoteEvent", "Ping")
+    ensure(remotesFolder, "RemoteFunction", "CookStep")
 end
 
 return InitRemotes
