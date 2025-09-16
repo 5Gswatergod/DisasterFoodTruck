@@ -1,24 +1,8 @@
-# Disaster Food Truck Tycoon — Roblox Project Skeleton (v2)
+# Disaster Food Truck Tycoon — v3.2 (--!strict on core systems)
 
-## Use with or without Rojo
-- **With Rojo**: `default.project.json` maps `src/*` to Studio services.
-- **Without Rojo**: Server module `ServerScriptService/InitRemotes.lua` auto-creates all Remotes at runtime.
+**Strict modules**: `Systems/CookSystem.lua`, `Systems/CookRPC.lua`, `Systems/OrderSystem.lua`, `Systems/OrderRPC.lua`  
+Others keep `--!nonstrict` for rapid iteration.
 
-## Structure
-- ReplicatedStorage
-  - Shared/Configs (Recipes/Disasters/Items/Missions)
-  - Remotes (empty in repo; created by server on startup)
-- ServerScriptService
-  - InitRemotes.lua (creates Remotes)
-  - Systems (PlayerData / OrderSystem / CookSystem / DisasterController / Economy / Matchmaking / AntiExploit)
-  - Bootstrap.server.lua (starts systems; spawns first order)
-- StarterPlayer/StarterPlayerScripts (UI, Input, CameraFX placeholders)
+Enable type checker warnings in Studio: **File → Studio Settings → Script Editor → Show Type Annotation Errors**
 
-## Quickstart
-1) Optional: Install Rojo → `rojo serve` and connect from Studio.
-2) Play: on server start, `InitRemotes` ensures required remotes exist.
-3) Join: after ~5s, a first order is sent to the joining player.
-
-## Notes
-- Economy uses a one-time token flow (Preauth → Purchase) to mitigate replay.
-- Replace placeholder TODOs with real map/disaster logic and UI.
+Quickstart: Press Play → 5s later NEW_ORDER → Start → QTE → Serve → tip toast.

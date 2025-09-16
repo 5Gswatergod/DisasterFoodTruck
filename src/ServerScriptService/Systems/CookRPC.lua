@@ -1,10 +1,11 @@
+--!strict
 local RS = game:GetService("ReplicatedStorage")
-local CookStep = RS.Remotes:WaitForChild("CookStep")
+local CookStep: RemoteFunction = RS:WaitForChild("Remotes"):WaitForChild("CookStep") :: any
 local CookSystem = require(script.Parent.CookSystem)
+local Types = require(script.Parent.CookSystem) :: any
 
-local PlayerProgress = {} -- [userId] = { [orderId] = stepIndex }
-
-CookStep.OnServerInvoke = function(player, stepData, timing)
-  local result = CookSystem:Evaluate(stepData, timing) -- "Perfect"/"Good"/"Fail"
-  return result
+CookStep.OnServerInvoke = function(player: Player, stepData: Types.Step?, timing: number?): string
+  return CookSystem:Evaluate(stepData, timing)
 end
+
+return {}
