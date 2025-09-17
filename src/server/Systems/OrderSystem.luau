@@ -7,6 +7,7 @@ local Systems    = SSS:WaitForChild("Systems")
 local Recipes    = require(RS.Shared.Configs.Recipes)
 local CookSystem = require(Systems:WaitForChild("CookSystem"))
 local PrepSystem = require(Systems:WaitForChild("PrepSystem"))
+local FlowDirector = require(Systems:WaitForChild("FlowDirector"))
 
 local OrderSystem = {}
 local activeOrders  = {}
@@ -25,6 +26,8 @@ function OrderSystem:SpawnOrder(forPlayer, profile, mapId)
 	PrepSystem:SetOrder(forPlayer, id)
 	MatchState:FireClient(forPlayer, "NEW_ORDER", { id = id, recipe = r })
 	print(("[OrderSystem] NEW_ORDER %s for %s"):format(id, forPlayer.Name))
+	local FlowDirector = require(Systems:WaitForChild("FlowDirector"));
+	FlowDirector:Push(forPlayer)
 	return id
 end
 
@@ -64,6 +67,7 @@ function OrderSystem:Submit(player, payload)
 		print(("[OrderSystem] SUBMIT OK %s tip=%d score=%d"):format(id, tip, score))
 		return true, tip
 	end
+	FlowDirector:Push(player)
 	return false
 end
 

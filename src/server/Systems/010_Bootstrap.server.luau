@@ -1,7 +1,12 @@
 local RS = game:GetService("ReplicatedStorage")
 local SSS = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
-
+local PrepSystem = require(script.Parent.PrepSystem)
+local Systems = getSystems()
+local PlayerData         = require(Systems:WaitForChild("PlayerData"))
+local OrderSystem        = require(Systems:WaitForChild("OrderSystem"))
+local DisasterController = require(Systems:WaitForChild("DisasterController"))
+local Economy            = require(Systems:WaitForChild("Economy"))
 local function getSystems()
 	local sys = SSS:FindFirstChild("Systems")
 	if not sys then
@@ -11,13 +16,6 @@ local function getSystems()
 	assert(sys, "[Bootstrap] 找不到 Systems 資料夾，請確認在 ServerScriptService 下有 Systems 或 Server/Systems")
 	return sys
 end
-
-local Systems = getSystems()
-
-local PlayerData         = require(Systems:WaitForChild("PlayerData"))
-local OrderSystem        = require(Systems:WaitForChild("OrderSystem"))
-local DisasterController = require(Systems:WaitForChild("DisasterController"))
-local Economy            = require(Systems:WaitForChild("Economy"))
 
 do
 	local mod = Systems:FindFirstChild("AntiExploit")
@@ -40,16 +38,21 @@ Players.PlayerAdded:Connect(function(plr)
 	end)
 end)
 
+local function currentMapId()
+	return workspace:GetAttribute("MapId") or "Beach"
+end
+
 Players.PlayerAdded:Connect(function(plr)
-	-- 先確保有 Profile，再派訂單
-	local _ = require(Systems:WaitForChild("PlayerData")):Ensure(plr)
-	task.delay(5, function()
-		local PlayerData = require(Systems:WaitForChild("PlayerData"))
-		local profile = PlayerData:Ensure(plr)
-		OrderSystem:SpawnOrder(plr, profile, "Beach")
+	PlayerData:Ensure(plr)
+	task.delay(2, function()
+		local profile = PlayerData:Get(plr) or {Level=1}
+		OrderSystem:SpawnOrder(plr, profile, currentMapId())
 	end)
 end)
 
+PrepSystem.Init()
+OrderSystem.Init()
+StationServer.Init()
 
 -- 調試提示
 print("[Bootstrap] OK。Systems 路徑 = " .. Systems:GetFullName())

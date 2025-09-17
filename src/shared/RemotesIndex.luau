@@ -37,6 +37,7 @@ M.CookStep        = ensure("CookStep", "RemoteFunction")
 M.Interact        = ensure("Interact", "RemoteEvent")
 M.StationRF       = ensure("StationRF", "RemoteFunction")
 M.StationNet      = ensure("StationNet", "RemoteEvent")
+M.FlowHint       = ensure("FlowHint", "RemoteEvent")
 
 if RunService:IsServer() then
 	print("[RemotesIndex] server initialized →", M.MatchState.Name, M.SubmitOrder.Name)

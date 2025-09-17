@@ -5,6 +5,24 @@ local CollectionService = game:GetService("CollectionService")
 local RS = game:GetService("ReplicatedStorage")
 
 local R = require(RS:WaitForChild("Shared"):WaitForChild("RemotesIndex"))
+local FlowHint = R.FlowHint
+local allowed = { Station_Cut=true, Station_Cook=true, Station_Plate=true, Station_Deliver=true }
+FlowHint.OnClientEvent:Connect(function(payload)
+	allowed = {}
+	for _,tag in ipairs(payload.allowed or {}) do allowed[tag] = true end
+	-- 立即刷新所有 Prompt 的 Enabled
+	for _, tag in ipairs({"Station_Pickup","Station_Cut","Station_Cook","Station_Plate","Station_Deliver"}) do
+		for _, inst in ipairs(game:GetService("CollectionService"):GetTagged(tag)) do
+			local part = (inst:IsA("BasePart") and inst) or (inst:IsA("Model") and (inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)))
+			if part then
+				local pr = part:FindFirstChild("_StationPrompt")
+				if pr then pr.Enabled = (allowed[tag] == true) end
+			end
+		end
+	end
+end)
+
+
 local MatchState = R.MatchState
 local CookStep   = R.CookStep
 local Interact   = R.Interact
