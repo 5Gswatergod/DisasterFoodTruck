@@ -1,2 +1,0 @@
---!nonstrict
-print('Input placeholder')

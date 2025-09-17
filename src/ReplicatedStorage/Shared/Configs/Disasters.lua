@@ -1,1 +1,0 @@
-return { GetRandom=function() return {id='MeteorShower', name='流星雨', duration=18} end }
