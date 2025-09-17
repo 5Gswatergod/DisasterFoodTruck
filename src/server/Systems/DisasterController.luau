@@ -65,7 +65,7 @@ local function applyStrongWind()
 		for _, plr in ipairs(Players:GetPlayers()) do
 			local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
 			if hrp then
-				hrp.AssemblyLinearVelocity += dir
+				hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity + dir
 			end
 		end
 	end)

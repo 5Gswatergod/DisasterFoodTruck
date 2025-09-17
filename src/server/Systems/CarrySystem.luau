@@ -6,7 +6,7 @@ local function ensure(uid)
 	return S[uid]
 end
 
-function Carry:Pickup(player, itemId:string)
+function Carry.Pickup(self, player, itemId)
 	local st = ensure(player.UserId)
 	if st.carry then return false, "HANDS_FULL" end
 	st.carry = itemId
@@ -26,13 +26,14 @@ function Carry:PlaceOnPlate(player)
 	return true
 end
 
-local function countify(list:{string})
+-- list: {string}
+local function countify(list)
 	local t = {}
 	for _,v in ipairs(list or {}) do t[v] = (t[v] or 0) + 1 end
 	return t
 end
 
-function Carry:IsPlateComplete(player, required:{string})
+function Carry.IsPlateComplete(player, required)
 	local st = S[player.UserId]; if not st or not st.started then return false end
 	local need = countify(required or {})
 	local have = countify(st.plate or {})
