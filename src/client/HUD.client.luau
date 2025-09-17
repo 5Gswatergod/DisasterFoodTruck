@@ -1,8 +1,9 @@
 -- StarterPlayerScripts/HUD.client.lua
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local Remotes = RS:WaitForChild("Remotes")
-local MatchState = Remotes:WaitForChild("MatchState")
+local R = require(RS:WaitForChild("Shared"):WaitForChild("RemotesIndex"))
+local MatchState = R.MatchState
+-- 後面照舊
 
 local player = Players.LocalPlayer
 local Gui = Instance.new("ScreenGui"); Gui.Name = "HUD"; Gui.ResetOnSpawn = false; Gui.Parent = player:WaitForChild("PlayerGui")
