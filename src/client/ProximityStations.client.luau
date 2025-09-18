@@ -6,20 +6,44 @@ local RS = game:GetService("ReplicatedStorage")
 
 local R = require(RS:WaitForChild("Shared"):WaitForChild("RemotesIndex"))
 local FlowHint = R.FlowHint
-local allowed = { Station_Cut=true, Station_Cook=true, Station_Plate=true, Station_Deliver=true }
-FlowHint.OnClientEvent:Connect(function(payload)
-	allowed = {}
-	for _,tag in ipairs(payload.allowed or {}) do allowed[tag] = true end
-	-- 立即刷新所有 Prompt 的 Enabled
-	for _, tag in ipairs({"Station_Pickup","Station_Cut","Station_Cook","Station_Plate","Station_Deliver"}) do
-		for _, inst in ipairs(game:GetService("CollectionService"):GetTagged(tag)) do
-			local part = (inst:IsA("BasePart") and inst) or (inst:IsA("Model") and (inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)))
+local allowed = {}  -- 由事件決定；預設空，初始掃描時不會禁用
+local TAGS = {"Station_Pickup","Station_Cut","Station_Cook","Station_Plate","Station_Deliver"}
+
+local function refreshPrompts()
+	for _, tag in ipairs(TAGS) do
+		for _, inst in ipairs(CollectionService:GetTagged(tag)) do
+			local part = (inst:IsA("BasePart") and inst)
+				or (inst:IsA("Model") and (inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)))
 			if part then
 				local pr = part:FindFirstChild("_StationPrompt")
-				if pr then pr.Enabled = (allowed[tag] == true) end
+				if pr then
+					pr.Enabled = (allowed[tag] == true)
+				end
 			end
 		end
 	end
+end
+
+FlowHint.OnClientEvent:Connect(function(payload)
+	-- 兼容三種：純陣列 / {allow={}} / {allowed={}}
+	local list
+	if typeof(payload) == "table" then
+		if #payload > 0 then
+			list = payload
+		else
+			list = payload.allow or payload.allowed or payload.tags
+		end
+	end
+
+	-- 重新建立 allowed：永遠開放拿取站
+	local newAllowed = { Station_Pickup = true }
+	if type(list) == "table" then
+		for _, tag in ipairs(list) do
+			newAllowed[tag] = true
+		end
+	end
+	allowed = newAllowed
+	refreshPrompts()
 end)
 
 
@@ -112,33 +136,36 @@ end
 
 -- 觸發一次動作
 local function handle(tag, inst)
-	local res = StationRF:InvokeServer({op="request", tag=tag})
-	if not (res and res.ok) then return end
-	if not res.granted then
-		-- 短暫把 ActionText 改成排隊序
-		local p = resolvePart(inst)
-		if p then
-			local pr = p:FindFirstChild("_StationPrompt")
-			if pr then pr.ActionText = ("Queued #%d"):format(res.queueIndex or 0) end
-		end
-		return
-	end
+    -- request
+	local res = StationRF:InvokeServer({ op = "request", tag = tag, station = inst })
+
+    if not (res and res.ok) then return end
+    if not res.granted then
+        -- ✅ 修正拼字 & 顯示排隊序
+        local p = resolvePart(inst)
+        if p then
+            local pr = p:FindFirstChild("_StationPrompt")
+            if pr then pr.ActionText = ("Queued #%d"):format(res.queueIndex or 0) end
+        end
+        return
+    end
+	
 	if tag == "Station_Pickup" then
 		local item = (inst:GetAttribute("ItemId") or inst.Name)
 		Interact:FireServer({op="pickup", item=item})
-		StationRF:InvokeServer({op="finish", tag="Station_Pickup"})
+		StationRF:InvokeServer({ op = "finish", tag = tag, station = inst })
 	elseif tag == "Station_Cut" then
 		startQTE("cut")
 	elseif tag == "Station_Cook" then
 		startQTE("cook")
 	elseif tag == "Station_Plate" then
 		Interact:FireServer({op="plateAdd"})
-		StationRF:InvokeServer({op="finish", tag="Station_Plate"})
+		StationRF:InvokeServer({ op = "finish", tag = tag, station = inst })
 	elseif tag == "Station_Deliver" then
 		if currentOrder then
 			SubmitOrder:FireServer({ id = currentOrder.id, ingredients = currentOrder.recipe.ingredients })
 		end
-		StationRF:InvokeServer({op="finish", tag="Station_Deliver"})
+		StationRF:InvokeServer({ op = "finish", tag = tag, station = inst })
 	end
 end
 

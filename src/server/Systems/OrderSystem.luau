@@ -1,33 +1,86 @@
 local RS         = game:GetService("ReplicatedStorage")
 local R          = require(RS:WaitForChild("Shared"):WaitForChild("RemotesIndex"))
 local MatchState = R.MatchState
+local Recipes = require(RS:WaitForChild("Shared"):WaitForChild("Configs"):WaitForChild("Recipes"))
 
 local SSS        = game:GetService("ServerScriptService")
 local Systems    = SSS:WaitForChild("Systems")
-local Recipes    = require(RS.Shared.Configs.Recipes)
 local CookSystem = require(Systems:WaitForChild("CookSystem"))
 local PrepSystem = require(Systems:WaitForChild("PrepSystem"))
-local FlowDirector = require(Systems:WaitForChild("FlowDirector"))
+local FlowApi: any = nil
 
 local OrderSystem = {}
 local activeOrders  = {}
 local activeByOwner = {}  -- uid -> orderId
 
-function OrderSystem:SpawnOrder(forPlayer, profile, mapId)
-	local uid = forPlayer.UserId
-	if activeByOwner[uid] then
-		MatchState:FireClient(forPlayer, "ORDER_HINT", { alreadyHas = true, id = activeByOwner[uid] })
-		return activeByOwner[uid]
+function OrderSystem.Init(flowDirectorApi: any)
+	FlowApi = flowDirectorApi
+end
+
+function OrderSystem.SpawnOrder(forPlayer: Player, profile: any?, mapId: string?)
+	-- 防呆：基礎參數
+	profile = profile or { Level = 1 }
+	if typeof(profile) ~= "table" then
+		profile = { Level = tonumber(profile) or 1 }
 	end
-	local r  = Recipes.GetRandom(profile or {Level=1}, mapId)
-	local id = tostring(os.clock())..tostring(math.random(100,999))
-	activeOrders[id]  = { owner = uid, recipe = r, expire = os.time()+60 }
-	activeByOwner[uid]= id
-	PrepSystem:SetOrder(forPlayer, id)
-	MatchState:FireClient(forPlayer, "NEW_ORDER", { id = id, recipe = r })
-	print(("[OrderSystem] NEW_ORDER %s for %s"):format(id, forPlayer.Name))
-	local FlowDirector = require(Systems:WaitForChild("FlowDirector"));
-	FlowDirector:Push(forPlayer)
+	profile.Level = profile.Level or 1
+	mapId = tostring(mapId or (workspace:GetAttribute("MapId") or "Beach"))
+
+	-- 使用 Recipes API 挑選配方（已內含權重/等級門檻/主題解析）
+	local r = Recipes.GetRandom(profile, mapId)
+	if not r then
+		-- 萬一未來改壞也不會崩：退回池子直接抽
+		local _, pool = Recipes.GetPool(mapId)
+		if type(pool) == "table" and #pool > 0 then
+			r = pool[math.random(1, #pool)]
+		end
+	end
+
+	if not r then
+		warn(("[OrderSystem] SpawnOrder: recipe is nil (mapId=%s, level=%s)"):format(mapId, tostring(profile.Level)))
+		return nil
+	end
+
+
+	-- 產生訂單 id
+	local HttpService = game:GetService("HttpService")
+	local id = r.id or ("ORD_" .. HttpService:GenerateGUID(false))
+
+	-- 註冊訂單到活躍表
+	activeOrders[id] = {
+		id = id,
+		owner = forPlayer.UserId,
+		recipe = r,
+		mapId = mapId,
+		level = profile.Level,
+		created = os.clock(),
+	}
+	activeByOwner[forPlayer.UserId] = id
+
+	-- 綁定到 PrepSystem（若有對應 API）
+	if PrepSystem and type(PrepSystem.SetOrder) == "function" then
+		local ok, err = pcall(function()
+			PrepSystem:SetOrder(forPlayer, id)
+		end)
+		if not ok then warn("[OrderSystem] PrepSystem:SetOrder failed:", err) end
+	end
+
+	-- 發送給 UI
+	if MatchState then
+		MatchState:FireClient(forPlayer, "NEW_ORDER", { id = id, recipe = r })
+	end
+
+	print(("[OrderSystem] NEW_ORDER %s for %s (map=%s, level=%s)"):format(id, forPlayer.Name, mapId, tostring(profile.Level)))
+
+	-- 通知流程（依注入 API，兼容 Push / PushNext）
+	if FlowApi then
+		if type(FlowApi.Push) == "function" then
+			FlowApi:Push(forPlayer)
+		elseif type(FlowApi.PushNext) == "function" then
+			FlowApi:PushNext(forPlayer)
+		end
+	end
+
 	return id
 end
 
@@ -67,7 +120,13 @@ function OrderSystem:Submit(player, payload)
 		print(("[OrderSystem] SUBMIT OK %s tip=%d score=%d"):format(id, tip, score))
 		return true, tip
 	end
-	FlowDirector:Push(player)
+	if FlowApi then
+		if type(FlowApi.Push) == "function" then
+			FlowApi:Push(player)
+		elseif type(FlowApi.PushNext) == "function" then
+			FlowApi:PushNext(player)
+		end
+	end
 	return false
 end
 

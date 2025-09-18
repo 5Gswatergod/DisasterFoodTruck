@@ -1,6 +1,5 @@
 -- ReplicatedStorage/Shared/Configs/Recipes.luau
 -- 依地圖風情（theme）選菜單；支援權重、等級門檻與驗證
-
 local Recipes = {}
 
 -- 主題菜單（示例：盡量沿用你現有食材：Bun/Lettuce/PattyRaw、Milk/Ice/Syrup）

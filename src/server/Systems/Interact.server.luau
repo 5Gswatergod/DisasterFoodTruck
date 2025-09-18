@@ -6,6 +6,20 @@ local Interact = R.Interact
 local Systems     = SSS:WaitForChild("Systems")
 local PrepSystem  = require(Systems:WaitForChild("PrepSystem"))
 
+local function _ps_mark(player: Player, field: string, orderId: any?)
+	local fn = PrepSystem and PrepSystem.Mark
+	if type(fn) == "function" then
+		-- try :Mark(player, orderId, field)
+		local ok = pcall(fn, PrepSystem, player, orderId, field)
+		if not ok then
+			-- try .Mark(player, orderId, field)
+			pcall(fn, player, orderId, field)
+		end
+	else
+		warn("[Interact] PrepSystem.Mark missing")
+	end
+end
+
 local function setTrayPlateFlag(player, has)
     local char = player.Character
     if not char then return end
@@ -19,7 +33,7 @@ Interact.OnServerEvent:Connect(function(player, payload)
     if type(payload) ~= "table" then return end
     if payload.op == "mark" then
         local field, orderId = payload.field, payload.orderId
-        local o = PrepSystem:Mark(player, orderId, field)
+        _ps_mark(player, field, orderId)
         if field == "plate" then
             setTrayPlateFlag(player, true)
         end

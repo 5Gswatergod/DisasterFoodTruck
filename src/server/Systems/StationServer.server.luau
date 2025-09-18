@@ -11,6 +11,68 @@ local CarrySystem   = require(Systems:WaitForChild("CarrySystem"))
 local OrderSystem   = require(Systems:WaitForChild("OrderSystem"))
 local FlowDirector  = require(Systems:WaitForChild("FlowDirector"))
 
+local CollectionService = game:GetService("CollectionService")
+
+-- --- Per-station queue/lock shim (當 StationManager 沒支援 station instance 時使用) ---
+type StationState = { busyBy: Player?, queue: {Player}, lastTouch: number }
+local _stateByStation: {[Instance]: StationState} = {}
+local _BUSY_TIMEOUT = 20
+
+local function _ensureState(station: Instance): StationState
+	local st = _stateByStation[station]
+	if not st then
+		st = { busyBy = nil, queue = {}, lastTouch = os.clock() }
+		_stateByStation[station] = st
+	end
+	return st
+end
+
+local function _stationHasTag(station: Instance, tag: string): boolean
+	if not station or not station:IsDescendantOf(workspace) then return false end
+	if CollectionService:HasTag(station, tag) then return true end
+	if station:IsA("Model") then
+		local pp = station.PrimaryPart
+		if pp and CollectionService:HasTag(pp, tag) then return true end
+	end
+	return false
+end
+
+local function _release(station: Instance, who: Player?)
+	local st = _ensureState(station)
+	if who and st.busyBy ~= who then return end
+	st.busyBy = nil
+	st.lastTouch = os.clock()
+	-- 可選：通知客戶端完成一次（你已有 StationNet 的 STATE 事件，可保持簡單）
+end
+
+-- 逾時釋放，避免鎖死
+task.spawn(function()
+	while true do
+		task.wait(5)
+		local now = os.clock()
+		for inst, st in pairs(_stateByStation) do
+			if st.busyBy and (now - st.lastTouch) > _BUSY_TIMEOUT then
+				_release(inst, st.busyBy)
+			end
+		end
+	end
+end)
+
+game:GetService("Players").PlayerRemoving:Connect(function(plr)
+	for inst, st in pairs(_stateByStation) do
+		if st.busyBy == plr then
+			_release(inst, plr)
+		else
+			-- 從 queue 移除
+			local newQ = {}
+			for _, p in ipairs(st.queue) do
+				if p ~= plr then table.insert(newQ, p) end
+			end
+			st.queue = newQ
+		end
+	end
+end)
+
 -- 確保有 Items 資料夾 & Tool；沒有就生成一把簡單 Tool
 local function ensureItemTool(itemId:string)
 	local folder = RS:FindFirstChild("Items")
@@ -45,9 +107,9 @@ end)
 StationRF.OnServerInvoke = function(player, payload)
 	if type(payload) ~= "table" then return { ok=false } end
 	if payload.op == "request" and payload.tag then
-		return StationManager:Request(payload.tag, player)
+		return StationManager:Request(payload.tag, player, payload.station)
 	elseif payload.op == "finish" and payload.tag then
-		return StationManager:Finish(payload.tag, player)
+		return StationManager:Finish(payload.tag, player, payload.station)
 	else
 		return { ok=false, reason="BAD_OP" }
 	end
@@ -84,15 +146,26 @@ InteractEV.OnServerEvent:Connect(function(player, payload)
 		-- 集齊需求就給托盤屬性（跟你現有邏輯一致）
 		local order = OrderSystem:GetActiveFor(player)
 		if order and CarrySystem:IsPlateComplete(player, order.recipe.ingredients) then
-			PrepSystem:Mark(player, "plate")
-			if player.Character then player.Character:SetAttribute("Tray", true) end
+			local fn = PrepSystem and PrepSystem.Mark
+			if type(fn) == "function" then
+				local ok = pcall(fn, PrepSystem, player, nil, "plate")
+				if not ok then pcall(fn, player, nil, "plate") end
+			else
+				warn("[StationServer] PrepSystem.Mark missing (plate)")
+			end
 		end
 
 	elseif payload.op == "mark" then
 		-- 來自 QTE 完成後的 cut / cook
 		local f = payload.field
 		if f == "cut" or f == "cook" or f == "plate" then
-			PrepSystem:Mark(player, f)
+			local fn = PrepSystem and PrepSystem.Mark
+			if type(fn) == "function" then
+				local ok = pcall(fn, PrepSystem, player, nil, f)
+				if not ok then pcall(fn, player, nil, f) end
+			else
+				warn("[StationServer] PrepSystem.Mark missing (generic)")
+			end
 		end
 
 	elseif payload.op == "reset" then
