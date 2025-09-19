@@ -1,6 +1,7 @@
 local SSS = game:GetService("ServerScriptService")
 local Systems = SSS:WaitForChild("Systems")
 local PlayerData = require(Systems:WaitForChild("PlayerData"))
+local Players = game:GetService("Players")
 
 local CookSystem = {}
 -- userId -> session
@@ -29,12 +30,16 @@ local function gradeStep(step, timing)
 end
 
 function CookSystem:Start(player, payload)
-	if not player or type(payload) ~= "table" or type(payload.orderId) ~= "string" or type(payload.recipe) ~= "table" then
+	if not player or type(payload) ~= "table" or (type(payload.orderId) ~= "string" and type(payload.orderId) ~= "number") or type(payload.recipe) ~= "table" then
 		return nil, "BAD_PAYLOAD"
 	end
+	local orderIdStr = tostring(payload.orderId)
 	local prof = PlayerData:Get(player) or {Level=1}
 	local cuisine = payload.recipe.cuisine or "Basic"
-	local rawSteps = payload.recipe.steps or { {name="切菜",window=0.32}, {name="翻面",window=0.30}, {name="裝盤",window=0.28} }
+	local rawSteps = payload.recipe.steps
+	if type(rawSteps) ~= "table" or #rawSteps == 0 then
+		rawSteps = { {name="切菜",window=0.32}, {name="翻面",window=0.30}, {name="裝盤",window=0.28} }
+	end
 
 	local steps = {}
 	for _, s in ipairs(rawSteps) do
@@ -42,7 +47,7 @@ function CookSystem:Start(player, payload)
 	end
 
 	sessions[player.UserId] = {
-		orderId   = payload.orderId,
+		orderId   = orderIdStr,
 		recipeId  = payload.recipe.id or payload.recipe.name or "?",
 		steps     = steps,
 		idx       = 1,
@@ -63,8 +68,12 @@ function CookSystem:SubmitStep(player, timing)
 	sess.score = sess.score + pts
 	sess.idx = sess.idx + 1
 	local nextStep = sess.steps[sess.idx]
+	local done = (nextStep == nil)
+	if done then
+		self:Clear(player)
+	end
 	return {
-		done       = (nextStep == nil),
+		done       = done,
 		grade      = grade,
 		stepIndex  = i,
 		next       = nextStep and { idx = sess.idx, step = nextStep } or nil,
@@ -89,5 +98,9 @@ end
 function CookSystem:Clear(player)
 	if player then sessions[player.UserId] = nil end
 end
+
+Players.PlayerRemoving:Connect(function(p)
+	sessions[p.UserId] = nil
+end)
 
 return CookSystem

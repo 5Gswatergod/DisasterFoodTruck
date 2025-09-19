@@ -4,8 +4,8 @@
 -- 只在伺服器端運作
 
 local Players = game:GetService("Players")
-local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
 
 export type PrepStep = "Pickup" | "Cut" | "Cook" | "Plate" | "Deliver"
 
@@ -49,6 +49,41 @@ local function ensureState(player: Player)
 	return stateByPlayer[player] :: PrepRecord
 end
 
+-- 將 step 正規化為 "Station_Cut" 這種格式
+local function normalizedStationTag(step: string): string
+	local head = string.sub(step, 1, 1)
+	local tail = string.sub(step, 2)
+	return "Station_" .. string.upper(head) .. string.lower(tail)
+end
+
+-- 大小寫不敏感，且允許 Tag 打在 Model 或 PrimaryPart
+local function hasStationTag(inst: Instance, want: string): boolean
+	local wantLower = string.lower(want)
+
+	local function tagged(obj: Instance?): boolean
+		if not obj then return false end
+		for _, tag in ipairs(CollectionService:GetTags(obj)) do
+			if string.lower(tag) == wantLower then return true end
+		end
+		return false
+	end
+
+	-- check the instance itself
+	if tagged(inst) then return true end
+
+	-- if it's a Model, check PrimaryPart and any descendant BaseParts
+	if inst:IsA("Model") then
+		if tagged(inst.PrimaryPart) then return true end
+		for _, d in ipairs(inst:GetDescendants()) do
+			if d:IsA("BasePart") and tagged(d) then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
 -- ===== 介面：開始一個Prep步驟 =====
 -- 由 StationServer / FlowDirector 在工作站觸發時呼叫
 function PrepSystem.StartStep(player: Player, step: PrepStep, args: {[string]: any}?): boolean
@@ -62,15 +97,10 @@ function PrepSystem.StartStep(player: Player, step: PrepStep, args: {[string]: a
 
 	-- 驗證工作站（可選：必須帶tag且與step匹配）
 	local station = if args and args.station then args.station :: Instance else nil
-	if station and not station:IsDescendantOf(workspace) then
-		warn("[PrepSystem] Invalid station")
-		return false
-	end
-	-- 例如：Station_Cut 只能處理 step="Cut"
 	if station then
-		local okTag = "Station_" .. step
-		if not CollectionService:HasTag(station, okTag) then
-			warn(("[PrepSystem] Station missing tag %s"):format(okTag))
+		local want = normalizedStationTag(tostring(step))
+		if not hasStationTag(station, want) then
+			warn(("[PrepSystem] Station missing tag %s"):format(want))
 			return false
 		end
 	end

@@ -58,14 +58,17 @@ local function clearLowGravity()
 end
 
 local function applyStrongWind()
-	-- 心跳推力（X 正向）
-	local dir = Vector3.new(1, 0, 0) * 35
+	-- 以恆定風速為目標，逐幀趨近，避免無限加速
+	local target = Vector3.new(35, 0, 0) -- 目標水平風速（可調）
 	if state.windConn then state.windConn:Disconnect() end
 	state.windConn = RunService.Heartbeat:Connect(function()
 		for _, plr in ipairs(Players:GetPlayers()) do
 			local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
 			if hrp then
-				hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity + dir
+				local vel = hrp.AssemblyLinearVelocity
+				-- 僅控制 XZ 水平風速分量，Y 保持原樣
+				local desired = Vector3.new(target.X, vel.Y, target.Z)
+				hrp.AssemblyLinearVelocity = vel:Lerp(desired, 0.08)
 			end
 		end
 	end)
@@ -97,9 +100,16 @@ local function applyFloorIsLava()
 	lava.CFrame = base.CFrame * CFrame.new(0, 0.11, 0)
 	lava.Parent = state.lavaFolder
 
+	local hitCD: {[Humanoid]: number} = {}
 	lava.Touched:Connect(function(hit)
 		local hum = hit and hit.Parent and hit.Parent:FindFirstChildOfClass("Humanoid")
-		if hum then hum:TakeDamage(10) end
+		if hum then
+			local now = os.clock()
+			if (hitCD[hum] or 0) < now then
+				hum:TakeDamage(10)
+				hitCD[hum] = now + 0.4 -- 0.4 秒冷卻
+			end
+		end
 	end)
 end
 local function clearFloorIsLava()
@@ -132,6 +142,15 @@ local function applyMeteorShower()
 			if hum then hum:TakeDamage(15) end
 		end)
 		Debris:AddItem(p, 10)
+		-- 在 Debris 移除後，從表中清理引用
+		 task.delay(10, function()
+			for i = #state.meteors, 1, -1 do
+				if state.meteors[i] == p then
+					state.meteors[i] = nil
+					break
+				end
+			end
+		end)
 	end
 
 	for _ = 1, 14 do

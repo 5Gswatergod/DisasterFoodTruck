@@ -1,5 +1,6 @@
 -- StarterPlayer/StarterPlayerScripts/ProximityStations.client.luau
 -- 以原生 ProximityPrompt 的 Hold 模式實作交互：長按完成指定秒數後才觸發
+-- 已移除 Station_Plate 相關邏輯
 
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
@@ -17,14 +18,14 @@ local localPlayer = Players.LocalPlayer
 local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
-local TAGS = {"Station_Pickup","Station_Cut","Station_Cook","Station_Plate","Station_Deliver"}
+-- ✅ 僅保留四類站點
+local TAGS = {"Station_Pickup","Station_Cut","Station_Cook","Station_Deliver"}
 
--- 與伺服端 StationManager.CFG 對齊的長按秒數
+-- 與伺服端 StationManager.CFG 對齊的長按秒數（已移除 Station_Plate）
 local HOLD = {
 	Station_Pickup  = 0.3,
 	Station_Cut     = 2.2,
 	Station_Cook    = 2.6,
-	Station_Plate   = 1.2,
 	Station_Deliver = 0.8,
 }
 
@@ -41,13 +42,21 @@ end
 
 local function actionTextFor(inst: Instance, tag: string)
 	if tag == "Station_Pickup" then
-		local item = (inst:GetAttribute("ItemId") or (inst:IsA("BasePart") and inst:GetAttribute("ItemId")) or inst.Name)
+		local raw = inst:GetAttribute("ItemId")
+		if raw == nil and inst:IsA("BasePart") then
+			raw = inst:GetAttribute("ItemId")
+		end
+		local item = tostring(raw or inst.Name)
 		return ("Pick up %s"):format(item)
-	elseif tag == "Station_Cut" then return "Cut"
-	elseif tag == "Station_Cook" then return "Cook"
-	elseif tag == "Station_Plate" then return "Plate"
-	elseif tag == "Station_Deliver" then return "Deliver"
-	else return "Use" end
+	elseif tag == "Station_Cut" then
+		return "Cut"
+	elseif tag == "Station_Cook" then
+		return "Cook"
+	elseif tag == "Station_Deliver" then
+		return "Deliver"
+	else
+		return "Use"
+	end
 end
 
 local function ensurePrompt(holderInst: Instance, tag: string)
@@ -130,12 +139,13 @@ local function handle(tag: string, inst: Instance)
 	if tag == "Station_Pickup" then
 		local item = (inst:GetAttribute("ItemId") or inst.Name)
 		Interact:FireServer({op="pickup", item=item})
+
 	elseif tag == "Station_Cut" then
 		Interact:FireServer({op="mark", field="cut", station = inst})
+
 	elseif tag == "Station_Cook" then
 		Interact:FireServer({op="mark", field="cook", station = inst})
-	elseif tag == "Station_Plate" then
-		Interact:FireServer({op="plateAdd", station = inst})
+
 	elseif tag == "Station_Deliver" then
 		if currentOrder then
 			SubmitOrder:FireServer({ id = currentOrder.id, ingredients = currentOrder.recipe.ingredients })

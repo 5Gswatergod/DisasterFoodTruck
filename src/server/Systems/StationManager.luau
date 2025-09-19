@@ -49,12 +49,37 @@ local function inQueuePlayer(t: {Player}, plr: Player): number?
 end
 
 local function stationHasTag(station: Instance, tag: string): boolean
-	if not station or not station:IsDescendantOf(workspace) then return false end
-	if CollectionService:HasTag(station, tag) then return true end
-	if station:IsA("Model") then
-		local pp = station.PrimaryPart
-		if pp and CollectionService:HasTag(pp, tag) then return true end
+	if not station or not station:IsDescendantOf(workspace) then
+		return false
 	end
+
+	-- 1) 該實例本身
+	if CollectionService:HasTag(station, tag) then
+		return true
+	end
+
+	-- 2) 找到最近的 Model 作為聚合檢查單位
+	local model = station:IsA("Model") and station or station:FindFirstAncestorOfClass("Model")
+	if not model then
+		return false
+	end
+
+	-- 2a) Model 與 PrimaryPart
+	if CollectionService:HasTag(model, tag) then
+		return true
+	end
+	local pp = model.PrimaryPart
+	if pp and CollectionService:HasTag(pp, tag) then
+		return true
+	end
+
+	-- 2b) 深度檢查所有 BasePart 子孫
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and CollectionService:HasTag(d, tag) then
+			return true
+		end
+	end
+
 	return false
 end
 
@@ -104,6 +129,7 @@ end
 
 -- Request: 兼容舊簽名 (tag, player)；新簽名為 (tag, player, station)
 function StationManager:Request(tag: string, player: Player, station: Instance?)
+	print(("[SM] Request tag=%s station=%s has=%s"):format(tag, tostring(station), tostring(station and stationHasTag(station, tag))))
 	local conf = CFG[tag]; if not conf then return { ok=false, reason="BAD_TAG" } end
 	local now = os.clock()
 
@@ -111,6 +137,10 @@ function StationManager:Request(tag: string, player: Player, station: Instance?)
 	if station and stationHasTag(station, tag) then
 		local ss = st_station(station)
 		-- 可立即取得
+		if tag == "Station_Pickup" then
+			-- 拿食材不需要鎖，直接允許
+			return { ok = true, granted = true, queueIndex = 0 }
+		end
 		if (not ss.user) and now >= ss.busyUntil then
 			ss.user = player
 			StationNet:FireAllClients("STATE", { tag=tag, station=station, userId=player.UserId, granted=true })
@@ -128,6 +158,10 @@ function StationManager:Request(tag: string, player: Player, station: Instance?)
 	end
 
 	-- 舊：沒有 station 就維持原本「以類型(tag)共用一個鎖」的行為
+	-- 特例：拿食材不鎖（即使沒有傳 station）
+	if tag == "Station_Pickup" then
+		return { ok = true, granted = true, queueIndex = 0 }
+	end
 	local ss = st_tag(tag)
 	-- 可立即取得
 	if (not ss.userId) and now >= ss.busyUntil then

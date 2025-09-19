@@ -5,11 +5,24 @@ local R  = require(RS:WaitForChild("Shared"):WaitForChild("RemotesIndex"))
 local FlowHint = R.FlowHint
 
 local p = Players.LocalPlayer
-local allowed = { Station_Cut=true, Station_Cook=true, Station_Plate=true, Station_Deliver=true } -- 初始允許全部；收到推播後覆寫
-
+local allowed = {}
+local function setAllowedFromPayload(payload)
+    local list
+    if typeof(payload) == "table" then
+        if #payload > 0 then
+            list = payload
+        else
+            list = payload.allow or payload.allowed or payload.tags
+        end
+    end
+    local newAllowed = { Station_Pickup = true }
+    if type(list) == "table" then
+        for _, tag in ipairs(list) do newAllowed[tag] = true end
+    end
+    allowed = newAllowed
+end
 FlowHint.OnClientEvent:Connect(function(payload)
-	allowed = {}
-	for _,tag in ipairs(payload.allowed or {}) do allowed[tag] = true end
+    setAllowedFromPayload(payload)
 end)
 
 local META = {
@@ -34,7 +47,6 @@ local function ensureUI(part, meta)
 	local txt = Instance.new("TextLabel")
 	txt.BackgroundTransparency = 0.2; txt.BackgroundColor3 = Color3.fromRGB(25,25,25)
 	txt.TextColor3 = Color3.fromRGB(255,255,255); txt.Font = Enum.Font.GothamSemibold; txt.TextSize = 14
-	txt.Size = UDim2.fromScale(1,1); txt.Text = meta.icon .. " 0m"; txt.Parent = bb
 end
 
 local function setVisible(part, tag, meta)

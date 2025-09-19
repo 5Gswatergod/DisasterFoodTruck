@@ -59,25 +59,41 @@ end
 
 -- ========== Require Systems (cycle-safe) ==========
 local PrepSystem         = safeRequire(Systems:WaitForChild("PrepSystem"))
-local OrderSystem      = require(Systems:WaitForChild("OrderSystem"))
-local FlowDirector     = require(Systems:WaitForChild("FlowDirector"))
+local OrderSystem        = safeRequire(Systems:WaitForChild("OrderSystem"))
+local FlowDirector       = safeRequire(Systems:WaitForChild("FlowDirector"))
 local StationServerObj   = Systems:WaitForChild("StationServer")
 local StationServer      = (StationServerObj.ClassName == "ModuleScript") and safeRequire(StationServerObj) or nil
 local Economy            = safeRequire(Systems:WaitForChild("Economy"))
 local PlayerData         = safeRequire(Systems:WaitForChild("PlayerData"))
 local DisasterController = safeRequire(Systems:WaitForChild("DisasterController"))
+local StorageSystem      = require(Systems:WaitForChild("StorageSystem"))
 
 -- ========== Init order ==========
+StorageSystem.Init({
+    Milk = 6, Ice = 12, Syrup = 8,
+    Bun = 6, PattyRaw = 6, Lettuce = 8,
+})
+
 if PrepSystem and type(PrepSystem.Init) == "function" then
 	PrepSystem.Init()
 end
 
 if FlowDirector and type(FlowDirector.Init) == "function" then
-	FlowDirector.Init(OrderSystem)
+	local ok = pcall(function()
+		FlowDirector:Init(OrderSystem)
+	end)
+	if not ok then
+		FlowDirector.Init(OrderSystem)
+	end
 end
 
 if OrderSystem and type(OrderSystem.Init) == "function" then
-	OrderSystem.Init(FlowDirector)
+	local ok = pcall(function()
+		OrderSystem:Init(FlowDirector)
+	end)
+	if not ok then
+		OrderSystem.Init(FlowDirector)
+	end
 end
 
 if Economy and type(Economy.Init) == "function" then
@@ -110,11 +126,16 @@ Players.PlayerAdded:Connect(function(plr)
 	task.delay(2, function()
 		local profile = (PlayerData and type(PlayerData.Get) == "function" and PlayerData:Get(plr)) or { Level = 1 }
 		if OrderSystem and type(OrderSystem.SpawnOrder) == "function" then
-			local ok, err = pcall(function()
-				OrderSystem.SpawnOrder(plr, profile, currentMapId())
+			local ok = pcall(function()
+				OrderSystem:SpawnOrder(plr, profile, currentMapId())
 			end)
 			if not ok then
-				warn("[Bootstrap] SpawnOrder 失敗：", err)
+				local ok2, err2 = pcall(function()
+					OrderSystem.SpawnOrder(plr, profile, currentMapId())
+				end)
+				if not ok2 then
+					warn("[Bootstrap] SpawnOrder 失敗：", err2)
+				end
 			end
 		end
 	end)

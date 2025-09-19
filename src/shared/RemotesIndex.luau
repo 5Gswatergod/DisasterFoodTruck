@@ -38,6 +38,11 @@ M.Interact        = ensure("Interact", "RemoteEvent")
 M.StationRF       = ensure("StationRF", "RemoteFunction")
 M.StationNet      = ensure("StationNet", "RemoteEvent")
 M.FlowHint       = ensure("FlowHint", "RemoteEvent")
+M.InventoryQuery   = ensure("InventoryQuery", "RemoteFunction")
+M.InventoryUpdated = ensure("InventoryUpdated", "RemoteEvent")
+M.SupplyOrder      = ensure("SupplyOrder", "RemoteFunction")
+M.BalanceQuery     = ensure("BalanceQuery", "RemoteFunction")
+M.BalanceUpdated   = ensure("BalanceUpdated", "RemoteEvent")
 
 if RunService:IsServer() then
 	print("[RemotesIndex] server initialized →", M.MatchState.Name, M.SubmitOrder.Name)

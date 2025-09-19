@@ -1,47 +1,83 @@
-local Carry = {}
-local S = {}  -- uid -> { carry:string?, plate:{string}, started:boolean }
+--!strict
+-- CarrySystem.luau
+-- 管玩家「手上拿著什麼」的最小系統，並支援切/煮後的食材轉換
 
-local function ensure(uid)
-	if not S[uid] then S[uid] = { carry=nil, plate={}, started=false } end
-	return S[uid]
+local Players = game:GetService("Players")
+local RS      = game:GetService("ReplicatedStorage")
+local Items   = require(RS:WaitForChild("Shared"):WaitForChild("Configs"):WaitForChild("Items"))
+
+export type CarryState = {
+	carry: string?, -- 例：Lettuce / PattyRaw / PattyCut / PattyCooked ...
+}
+
+local CarrySystem = {}
+local _byPlayer: {[Player]: CarryState} = {}
+
+local function ensure(p: Player): CarryState
+	local st = _byPlayer[p]
+	if not st then
+		st = { carry = nil }
+		_byPlayer[p] = st
+	end
+	return st
 end
 
-function Carry.Pickup(self, player, itemId)
-	local st = ensure(player.UserId)
-	if st.carry then return false, "HANDS_FULL" end
+-- ===== 外部介面 =====
+
+function CarrySystem:Get(p: Player): CarryState
+	return ensure(p)
+end
+
+function CarrySystem:Peek(p: Player): string?
+	local st = _byPlayer[p]
+	return st and st.carry or nil
+end
+
+function CarrySystem:Pickup(p: Player, itemId: string): (boolean, string?)
+	if type(itemId) ~= "string" or itemId == "" then
+		return false, "BAD_ITEM"
+	end
+	local st = ensure(p)
 	st.carry = itemId
-	return true
+	return true, itemId
 end
 
-function Carry:StartPlate(player)
-	local st = ensure(player.UserId); st.started = true; return true
-end
-
-function Carry:PlaceOnPlate(player)
-	local st = ensure(player.UserId)
-	if not st.started then st.started = true end
-	if not st.carry then return false, "NO_CARRY" end
-	table.insert(st.plate, st.carry)
+function CarrySystem:PlaceOnPlate(p: Player): (string?)
+	local st = ensure(p)
+	local prev = st.carry
 	st.carry = nil
-	return true
+	return prev
 end
 
--- list: {string}
-local function countify(list)
-	local t = {}
-	for _,v in ipairs(list or {}) do t[v] = (t[v] or 0) + 1 end
-	return t
+function CarrySystem:Clear(p: Player): ()
+	local st = ensure(p)
+	st.carry = nil
 end
 
-function Carry.IsPlateComplete(player, required)
-	local st = S[player.UserId]; if not st or not st.started then return false end
-	local need = countify(required or {})
-	local have = countify(st.plate or {})
-	for k,n in pairs(need) do if (have[k] or 0) < n then return false end end
-	return true
+function CarrySystem:ApplyCut(p: Player): (boolean, string?, boolean)
+	local st = ensure(p)
+	if not st.carry then return false, nil, false end
+	local out = Items.ResultAfterCut and Items.ResultAfterCut[st.carry]
+	if out and type(out) == "string" then
+		st.carry = out
+		return true, out, true
+	end
+	return true, st.carry, false
 end
 
-function Carry:Get(player) return S[player.UserId] end
-function Carry:Clear(player) S[player.UserId] = nil end
+function CarrySystem:ApplyCook(p: Player): (boolean, string?, boolean)
+	local st = ensure(p)
+	if not st.carry then return false, nil, false end
+	local out = Items.ResultAfterCook and Items.ResultAfterCook[st.carry]
+	if out and type(out) == "string" then
+		st.carry = out
+		return true, out, true
+	end
+	return true, st.carry, false
+end
 
-return Carry
+Players.PlayerRemoving:Connect(function(p)
+	_byPlayer[p] = nil
+end)
+
+return CarrySystem

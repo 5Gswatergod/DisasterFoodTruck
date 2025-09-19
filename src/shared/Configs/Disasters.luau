@@ -12,18 +12,33 @@ Disasters.pool = {
    serverEffects={safeIslands=6}, clientFX={vfx='Heat'}},
 }
 
-local lastId = nil
+local lastId: string? = nil
+local rng = Random.new(os.clock())
 
 function Disasters.GetRandom()
-  local pool = {}
-  for _,d in ipairs(Disasters.pool) do
-    if not(d.noRepeat and d.id==lastId) then
-      for i=1,(d.weight or 1) do table.insert(pool, d) end
+  local function buildPool(blockId: string?): {any}
+    local pool = {}
+    for _, d in ipairs(Disasters.pool) do
+      local skip = (blockId ~= nil) and d.noRepeat and (d.id == blockId)
+      if not skip then
+        local w = math.max(1, math.floor(d.weight or 1))
+        for i = 1, w do table.insert(pool, d) end
+      end
     end
+    return pool
   end
-  local pick = pool[math.random(1,#pool)]
+
+  -- 第一次嘗試：遵守 noRepeat
+  local pool = buildPool(lastId)
+  -- 若因 noRepeat 造成空池，放寬限制再抽
+  if #pool == 0 then
+    pool = buildPool(nil)
+  end
+  assert(#pool > 0, "[Disasters] pool is empty")
+
+  local pick = pool[rng:NextInteger(1, #pool)]
   lastId = pick.id
-  return pick
+  return table.clone(pick)
 end
 
 function Disasters.ApplyServerEffects(d)
