@@ -1,3 +1,4 @@
+--!strict
 local RS   = game:GetService("ReplicatedStorage")
 local R    = require(RS:WaitForChild("Shared"):WaitForChild("RemotesIndex"))
 local StationRF  = R.StationRF
@@ -13,7 +14,7 @@ local FlowDirector  = require(Systems:WaitForChild("FlowDirector"))
 
 local CollectionService = game:GetService("CollectionService")
 
--- --- Per-station queue/lock shim (當 StationManager 沒支援 station instance 時使用) ---
+-- --- Per-station queue/lock shim（若 StationManager 不支援 station 參數）
 type StationState = { busyBy: Player?, queue: {Player}, lastTouch: number }
 local _stateByStation: {[Instance]: StationState} = {}
 local _BUSY_TIMEOUT = 20
@@ -42,10 +43,8 @@ local function _release(station: Instance, who: Player?)
 	if who and st.busyBy ~= who then return end
 	st.busyBy = nil
 	st.lastTouch = os.clock()
-	-- 可選：通知客戶端完成一次（你已有 StationNet 的 STATE 事件，可保持簡單）
 end
 
--- 逾時釋放，避免鎖死
 task.spawn(function()
 	while true do
 		task.wait(5)
@@ -63,7 +62,6 @@ game:GetService("Players").PlayerRemoving:Connect(function(plr)
 		if st.busyBy == plr then
 			_release(inst, plr)
 		else
-			-- 從 queue 移除
 			local newQ = {}
 			for _, p in ipairs(st.queue) do
 				if p ~= plr then table.insert(newQ, p) end
@@ -71,10 +69,12 @@ game:GetService("Players").PlayerRemoving:Connect(function(plr)
 			st.queue = newQ
 		end
 	end
+	StationManager:Leave(plr)
+	CarrySystem:Clear(plr)
 end)
 
 -- 確保有 Items 資料夾 & Tool；沒有就生成一把簡單 Tool
-local function ensureItemTool(itemId:string)
+local function ensureItemTool(itemId: string)
 	local folder = RS:FindFirstChild("Items")
 	if not folder then folder = Instance.new("Folder"); folder.Name="Items"; folder.Parent = RS end
 	local tool = folder:FindFirstChild(itemId)
@@ -88,7 +88,7 @@ local function ensureItemTool(itemId:string)
 	return tool
 end
 
-local function giveToBackpack(player, itemId:string, equip:boolean?)
+local function giveToBackpack(player: Player, itemId: string, equip: boolean?)
 	local src = ensureItemTool(itemId)
 	local clone = src:Clone()
 	local char = player.Character
@@ -99,31 +99,76 @@ local function giveToBackpack(player, itemId:string, equip:boolean?)
 	end
 end
 
-game:GetService("Players").PlayerRemoving:Connect(function(plr)
-	StationManager:Leave(plr)
-	CarrySystem:Clear(plr)
-end)
-
-StationRF.OnServerInvoke = function(player, payload)
+StationRF.OnServerInvoke = function(player: Player, payload: any)
 	if type(payload) ~= "table" then return { ok=false } end
-	if payload.op == "request" and payload.tag then
-		return StationManager:Request(payload.tag, player, payload.station)
-	elseif payload.op == "finish" and payload.tag then
-		return StationManager:Finish(payload.tag, player, payload.station)
-	else
-		return { ok=false, reason="BAD_OP" }
+
+	-- 嘗試使用 StationManager 的新版簽名 (tag, player, station)；否則退回本地 shim
+	local function sm_supports_station(): boolean
+		if StationManager and type(StationManager.Request) == "function" then
+			local ok = pcall(function()
+				StationManager.Request(StationManager, payload.tag, player, payload.station)
+			end)
+			return ok
+		end
+		return false
 	end
+
+	if payload.op == "request" and payload.tag then
+		if sm_supports_station() then
+			return StationManager:Request(payload.tag, player, payload.station)
+		end
+		-- fallback：以 station 為單位鎖
+		local inst = payload.station
+		if not inst or not _stationHasTag(inst, payload.tag) then
+			return { ok=false, err="invalid station" }
+		end
+		local st = _ensureState(inst)
+		if not st.busyBy then
+			st.busyBy = player
+			st.lastTouch = os.clock()
+			return { ok=true, granted=true }
+		end
+		for i, p in ipairs(st.queue) do
+			if p == player then
+				return { ok=true, granted=false, queueIndex=i }
+			end
+		end
+		table.insert(st.queue, player)
+		return { ok=true, granted=false, queueIndex=#st.queue }
+
+	elseif payload.op == "finish" and payload.tag then
+		if sm_supports_station() then
+			return StationManager:Finish(payload.tag, player, payload.station)
+		end
+		local inst = payload.station
+		if not inst or not _stationHasTag(inst, payload.tag) then
+			return { ok=false, err="invalid station" }
+		end
+		local st = _ensureState(inst)
+		if st.busyBy == player then
+			_release(inst, player)
+		else
+			local newQ = {}
+			for _, p in ipairs(st.queue) do
+				if p ~= player then table.insert(newQ, p) end
+			end
+			st.queue = newQ
+		end
+		return { ok=true }
+	end
+
+	return { ok=false, reason="BAD_OP" }
 end
 
-InteractEV.OnServerEvent:Connect(function(player, payload)
+InteractEV.OnServerEvent:Connect(function(player: Player, payload: any)
 	if type(payload) ~= "table" then return end
+
 	if payload.op == "pickup" and type(payload.item) == "string" then
-		-- ✅ 給背包 Tool + Carry 狀態
 		local ok = select(1, CarrySystem:Pickup(player, payload.item))
 		if ok then giveToBackpack(player, payload.item, true) end
 
 	elseif payload.op == "plateAdd" then
-		-- ✅ 把「手上/背包」對應 Tool 消耗掉
+		-- 消耗手上/背包 Tool
 		local st = CarrySystem:Get(player)
 		if st and st.carry then
 			local name = st.carry
@@ -131,48 +176,34 @@ InteractEV.OnServerEvent:Connect(function(player, payload)
 			local consumed = false
 			if char then
 				local tool = char:FindFirstChild(name)
-				if tool and tool:IsA("Tool") then tool:Destroy(); consumed=true end
+				if tool and tool:IsA("Tool") then tool:Destroy(); consumed = true end
 			end
 			if not consumed then
 				local bp = player:FindFirstChildOfClass("Backpack")
 				if bp then
 					local tool = bp:FindFirstChild(name)
-					if tool and tool:IsA("Tool") then tool:Destroy(); consumed=true end
+					if tool and tool:IsA("Tool") then tool:Destroy(); consumed = true end
 				end
 			end
 		end
 		CarrySystem:PlaceOnPlate(player)
 
-		-- 集齊需求就給托盤屬性（跟你現有邏輯一致）
+		-- Plate 步驟（帶 station 以通過 PrepSystem 驗證）
+		PrepSystem.StartStep(player, "Plate", { station = payload.station })
+		PrepSystem.CompleteStep(player)
+
+		-- 集齊需求就給托盤屬性（沿用你的原邏輯）
 		local order = OrderSystem:GetActiveFor(player)
 		if order and CarrySystem:IsPlateComplete(player, order.recipe.ingredients) then
-			local fn = PrepSystem and PrepSystem.Mark
-			if type(fn) == "function" then
-				local ok = pcall(fn, PrepSystem, player, nil, "plate")
-				if not ok then pcall(fn, player, nil, "plate") end
-			else
-				warn("[StationServer] PrepSystem.Mark missing (plate)")
-			end
-		end
-
-	elseif payload.op == "mark" then
-		-- 來自 QTE 完成後的 cut / cook
-		local f = payload.field
-		if f == "cut" or f == "cook" or f == "plate" then
-			local fn = PrepSystem and PrepSystem.Mark
-			if type(fn) == "function" then
-				local ok = pcall(fn, PrepSystem, player, nil, f)
-				if not ok then pcall(fn, player, nil, f) end
-			else
-				warn("[StationServer] PrepSystem.Mark missing (generic)")
-			end
+			if player.Character then player.Character:SetAttribute("Tray", true) end
 		end
 
 	elseif payload.op == "reset" then
-		PrepSystem:Reset(player); CarrySystem:Clear(player)
+		PrepSystem.ResetOnRespawn(player)
+		CarrySystem:Clear(player)
 	end
 
-	-- ✅ 每次互動後都重算「只允許」的站點並推送
+	-- 每次互動後更新可見站點
 	FlowDirector:Push(player)
 end)
 
